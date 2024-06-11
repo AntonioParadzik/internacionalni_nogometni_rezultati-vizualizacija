@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="styles/indexStyle.css" />
+    <title>International football matches - visualization</title>
+  </head>
+  <body>
+    <header>
+      <h1>
+        Visualization of international football matches from 1872 to 2024.
+      </h1>
+      <nav>
+        <ul>
+          <li><a href="#">Goalscorers</a></li>
+          <li>
+            <a href="pages/national-teams-map.html">National teams - map</a>
+          </li>
+          <li><a href="pages/home-away-visual.html">Home/away visual</a></li>
+        </ul>
+      </nav>
+    </header>
+    <main>
+      <div id="bar-container"></div>
+      <div id="timeline-controls">
+        <button id="play-pause-btn">Play</button>
+        <div class="picker-control">
+          <label for="yearPicker">Select a year:</label>
+          <select id="yearPicker">
+            <option value=""></option>
+          </select>
+        </div>
+      </div>
+    </main>
+    <script>
+      var width = 1400;
+      var height = 500;
+
+      var tickDuration = 1000; // Duration of animation
+      var delayDuration = 2000; // Delay duration between 2 years
+      var top_n = 10;
+
+      const colors = [
+        "#85FFC7",
+        "#57B99D",
+        "#297373",
+        "#947C63",
+        "#FF8552",
+        "#F3B69C",
+        "#EDCEC1",
+        "#909090",
+        "#39393A",
+      ];
+
+      var svg = d3
+        .select("#bar-container")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+      let barPadding = height / (top_n * 5);
+
+      let title = svg
+        .append("text")
+        .attr("class", "title")
+        .attr("y", 24)
+        .attr("x", 100)
+        .html("Top 5 Goalscorers Throughout the Years");
+
+      let subTitle = svg
+        .append("text")
+        .attr("class", "subTitle")
+        .attr("x", 100)
+        .attr("y", 52)
+        .html("Goals");
+
+      const cumulativeGoals = {};
+      const flatData = [];
+      d3.json("./datasets/goalscorers.json").then(function (data) {
+        const years = Array.from(
+          new Set(data.map((d) => new Date(d.date).getFullYear()))
+        ).sort();
+
+        const yearPicker = d3.select("#yearPicker");
+        years.forEach((year) => {
+          yearPicker.append("option").attr("value", year).text(year);
+        });
+
+        years.forEach((year) => {
+          data
+            .filter((d) => new Date(d.date).getFullYear() === year)
+            .forEach((d) => {
+              if (!cumulativeGoals[d.scorer]) {
+                cumulativeGoals[d.scorer] = 0;
+              }
+              cumulativeGoals[d.scorer] += 1;
+            });
+
+          const yearData = Object.keys(cumulativeGoals).map((scorer) => ({
+            year: year,
+            name: scorer,
+            value: cumulativeGoals[scorer],
+          }));
+
+          yearData
+            .sort((a, b) => b.value - a.value)
+            .slice(0, top_n)
+            .forEach((d, i) => {
+              d.rank = i;
+              flatData.push(d);
+            });
+        });
+
+        let yearIndex = 0;
+        let year = years[yearIndex];
+
+        let yearSlice = flatData
+          .filter((d) => d.year === year && !isNaN(d.value))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, top_n);
+
+        console.log(yearSlice);
+
+        let x = d3
+          .scaleLinear()
+          .domain([0, d3.max(yearSlice, (d) => d.value)])
+          .range([0, width - 350]);
+
+        let y = d3
+          .scaleLinear()
+          .domain([top_n, 0])
+          .range([height - 5, 80]);
+
+        let xAxis = d3
+          .axisTop()
+          .scale(x)
+          .ticks(width > 500 ? 5 : 2)
+          .tickSize(-(height - 85))
+          .tickFormat((d) => d3.format(",")(d));
+
+        svg
+          .append("g")
+          .attr("class", "xAxis")
+          .attr("transform", `translate(100, 80)`)
+          .call(xAxis)
+          .selectAll(".tick line")
+          .classed("origin", (d) => d === 0);
+
+        svg
+          .selectAll("rect.bar")
+          .data(yearSlice, (d) => d.name)
+          .enter()
+          .append("rect")
+          .attr("class", "bar")
+          .attr("x", 100)
+          .attr("width", (d) => x(d.value))
+          .attr("y", (d) => y(d.rank) + 5)
+          .attr("height", y(1) - y(0) - barPadding)
+          .style("fill", (d, i) => colors[i % colors.length]);
+
+        svg
+          .selectAll("text.label")
+          .data(yearSlice, (d) => d.name)
+          .enter()
+          .append("text")
+          .attr("class", "label")
+          .attr("x", (d) => x(d.value) + 95)
+          .attr("y", (d) => y(d.rank) + 5 + (y(1) - y(0)) / 2)
+          .attr("text-anchor", "end")
+          .html((d) => d.name);
+
+        const yearText = svg
+          .append("text")
+          .attr("class", "yearText")
+          .attr("x", width - 200)
+          .attr("y", height - 25)
+          .style("text-anchor", "end")
+          .html(year);
+
+        let ticker;
+        let tickerRunning = false;
+
+        function toggleTicker() {
+          if (tickerRunning) {
+            ticker.stop();
+            tickerRunning = false;
+            console.log("Ticker stopped");
+            d3.select("#play-pause-btn").html("Play");
+          } else {
+            tickerRunning = true;
+            ticker = d3.interval((e) => tick(), delayDuration);
+            console.log("Ticker started");
+            d3.select("#play-pause-btn").html("Pause");
+          }
+        }
+
+        d3.select("#play-pause-btn").on("click", toggleTicker);
+
+        d3.select("#yearPicker").on("change", function () {
+          const selectedYear = d3.select(this).property("value");
+          if (selectedYear) {
+            year = +selectedYear;
+            yearIndex = years.indexOf(year);
+            updateChart(year);
+          }
+        });
+
+        function updateChart(year) {
+          yearSlice = flatData
+            .filter((d) => d.year === year && !isNaN(d.value))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, top_n);
+
+          x.domain([0, d3.max(yearSlice, (d) => d.value)]);
+
+          svg
+            .select(".xAxis")
+            .transition()
+            .duration(tickDuration)
+            .ease(d3.easeLinear)
+            .call(xAxis);
+
+          let bars = svg.selectAll(".bar").data(yearSlice, (d) => d.name);
+
+          bars
+            .enter()
+            .append("rect")
+            .attr("class", (d) => `bar ${d.name.replace(/\s/g, "_")}`)
+            .attr("x", 100)
+            .attr("width", (d) => x(d.value))
+            .attr("y", (d) => y(top_n + 1) + 5)
+            .attr("height", y(1) - y(0) - barPadding)
+            .style("fill", (d, i) => colors[i % colors.length])
+            .merge(bars)
+            .transition()
+            .duration(tickDuration)
+            .ease(d3.easeLinear)
+            .attr("width", (d) => x(d.value))
+            .attr("y", (d) => y(d.rank) + 5);
+
+          bars
+            .exit()
+            .transition()
+            .duration(tickDuration)
+            .ease(d3.easeLinear)
+            .attr("width", (d) => x(d.value))
+            .attr("y", (d) => y(top_n + 1) + 5)
+            .remove();
+
+          let labels = svg.selectAll(".label").data(yearSlice, (d) => d.name);
+
+          labels
+            .enter()
+            .append("text")
+            .attr("class", "label")
+            .attr("x", (d) => x(d.value) + 95)
+            .attr("y", (d) => y(top_n + 1) + 5 + (y(1) - y(0)) / 2)
+            .attr("text-anchor", "end")
+            .html((d) => d.name)
+            .merge(labels)
+            .transition()
+            .duration(tickDuration)
+            .ease(d3.easeLinear)
+            .attr("x", (d) => x(d.value) + 95)
+            .attr("y", (d) => y(d.rank) + 5 + (y(1) - y(0)) / 2);
+
+          labels
+            .exit()
+            .transition()
+            .duration(tickDuration)
+            .ease(d3.easeLinear)
+            .attr("y", (d) => y(top_n + 1) + 5 + (y(1) - y(0)) / 2)
+            .remove();
+
+          yearText.html(year);
+        }
+
+        function tick() {
+          yearSlice = flatData
+            .filter((d) => d.year === year && !isNaN(d.value))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, top_n);
+
+          console.log(yearSlice);
+
+          x.domain([0, d3.max(yearSlice, (d) => d.value)]);
+
+          svg
+            .select(".xAxis")
+            .transition()
+            .duration(tickDuration)
+            .ease(d3.easeLinear)
+            .call(xAxis);
+
+          let bars = svg.selectAll(".bar").data(yearSlice, (d) => d.name);
+
+          bars
+            .enter()
+            .append("rect")
+            .attr("class", (d) => `bar ${d.name.replace(/\s/g, "_")}`)
+            .attr("x", 100)
+            .attr("width", (d) => x(d.value))
+            .attr("y", (d) => y(top_n + 1) + 5)
+            .attr("height", y(1) - y(0) - barPadding)
+            .style("fill", (d, i) => colors[i % colors.length])
+            .merge(bars)
+            .transition()
+            .duration(tickDuration)
+            .ease(d3.easeLinear)
+            .attr("width", (d) => x(d.value))
+            .attr("y", (d) => y(d.rank) + 5);
+
+          bars
+            .exit()
+            .transition()
+            .duration(tickDuration)
+            .ease(d3.easeLinear)
+            .attr("width", (d) => x(d.value))
+            .attr("y", (d) => y(top_n + 1) + 5)
+            .remove();
+
+          let labels = svg.selectAll(".label").data(yearSlice, (d) => d.name);
+
+          labels
+            .enter()
+            .append("text")
+            .attr("class", "label")
+            .attr("x", (d) => x(d.value) + 95)
+            .attr("y", (d) => y(top_n + 1) + 5 + (y(1) - y(0)) / 2)
+            .attr("text-anchor", "end")
+            .html((d) => d.name)
+            .merge(labels)
+            .transition()
+            .duration(tickDuration)
+            .ease(d3.easeLinear)
+            .attr("x", (d) => x(d.value) + 95)
+            .attr("y", (d) => y(d.rank) + 5 + (y(1) - y(0)) / 2);
+
+          labels
+            .exit()
+            .transition()
+            .duration(tickDuration)
+            .ease(d3.easeLinear)
+            .attr("y", (d) => y(top_n + 1) + 5 + (y(1) - y(0)) / 2)
+            .remove();
+
+          yearText.html(year);
+
+          yearIndex++;
+          if (yearIndex >= years.length) {
+            ticker.stop();
+          }
+          year = years[yearIndex];
+        }
+      });
+    </script>
+  </body>
+</html>

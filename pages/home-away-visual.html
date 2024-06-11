@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="../styles/home-away-style.css" />
+    <title>International football matches - visualization</title>
+  </head>
+  <body>
+    <header>
+      <h1>
+        Visualization of international football matches from 1872 to 2024.
+      </h1>
+      <nav>
+        <ul>
+          <li><a href="../index.html">Goalscorers</a></li>
+          <li><a href="./national-teams-map.html">National teams - map</a></li>
+          <li><a href="#">Home/away visual</a></li>
+        </ul>
+      </nav>
+    </header>
+    <main>
+      <h1>Top 5 most efficient countries</h1>
+      <div class="first-row">
+        <div id="pie-container"></div>
+        <div class="checkboxes">
+          <label>
+            <input type="checkbox" id="homeCheckbox" />
+            Home
+          </label>
+          <label>
+            <input type="checkbox" id="awayCheckbox" />
+            Away
+          </label>
+        </div>
+      </div>
+      <div id="line-chart-container"></div>
+    </main>
+    <script>
+      var width = 400;
+      var height = 400;
+      var outerRadius = 200;
+      var innerRadius = 0;
+
+      const colors = [
+        "#85FFC7",
+        "#57B99D",
+        "#297373",
+        "#947C63",
+        "#FF8552",
+        "#F3B69C",
+        "#EDCEC1",
+        "#909090",
+        "#39393A",
+      ];
+
+      var svg = d3
+        .select("#pie-container")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+      var arc = d3.arc().innerRadius(innerRadius).outerRadius(outerRadius);
+
+      let resultsData;
+      let results = {};
+      console.log("results.json loading...");
+
+      d3.json("../datasets/results.json")
+        .then((data) => {
+          console.log("results.json loaded.");
+          resultsData = data;
+
+          resultsData.forEach((match) => {
+            if (!results[match.home_team]) {
+              results[match.home_team] = {
+                homeWins: 0,
+                homeDraws: 0,
+                homeLosses: 0,
+                awayWins: 0,
+                awayDraws: 0,
+                awayLosses: 0,
+                yearlyStats: {},
+              };
+            }
+            if (!results[match.away_team]) {
+              results[match.away_team] = {
+                homeWins: 0,
+                homeDraws: 0,
+                homeLosses: 0,
+                awayWins: 0,
+                awayDraws: 0,
+                awayLosses: 0,
+                yearlyStats: {},
+              };
+            }
+
+            const year = new Date(match.date).getFullYear();
+
+            if (!results[match.home_team].yearlyStats[year]) {
+              results[match.home_team].yearlyStats[year] = {
+                homeWins: 0,
+                homeDraws: 0,
+                homeLosses: 0,
+                awayWins: 0,
+                awayDraws: 0,
+                awayLosses: 0,
+              };
+            }
+            if (!results[match.away_team].yearlyStats[year]) {
+              results[match.away_team].yearlyStats[year] = {
+                homeWins: 0,
+                homeDraws: 0,
+                homeLosses: 0,
+                awayWins: 0,
+                awayDraws: 0,
+                awayLosses: 0,
+              };
+            }
+
+            if (match.home_score > match.away_score) {
+              results[match.home_team].homeWins += 1;
+              results[match.home_team].yearlyStats[year].homeWins += 1;
+              results[match.away_team].awayLosses += 1;
+              results[match.away_team].yearlyStats[year].awayLosses += 1;
+            } else if (match.home_score < match.away_score) {
+              results[match.away_team].awayWins += 1;
+              results[match.away_team].yearlyStats[year].awayWins += 1;
+              results[match.home_team].homeLosses += 1;
+              results[match.home_team].yearlyStats[year].homeLosses += 1;
+            } else {
+              results[match.home_team].homeDraws += 1;
+              results[match.home_team].yearlyStats[year].homeDraws += 1;
+              results[match.away_team].awayDraws += 1;
+              results[match.away_team].yearlyStats[year].awayDraws += 1;
+            }
+          });
+
+          console.log(results);
+
+          for (let team in results) {
+            let homeMatches =
+              results[team].homeWins +
+              results[team].homeDraws +
+              results[team].homeLosses;
+            let awayMatches =
+              results[team].awayWins +
+              results[team].awayDraws +
+              results[team].awayLosses;
+            let totalMatches = homeMatches + awayMatches;
+
+            let homePointsEarned =
+              results[team].homeWins * 3 + results[team].homeDraws;
+            let awayPointsEarned =
+              results[team].awayWins * 3 + results[team].awayDraws;
+            let totalPointsEarned = homePointsEarned + awayPointsEarned;
+
+            let homeEfficiency = homePointsEarned / (homeMatches * 3);
+            let awayEfficiency = awayPointsEarned / (awayMatches * 3);
+            let totalEfficiency = totalPointsEarned / (totalMatches * 3);
+
+            results[team].homeEfficiency = homeEfficiency * 100;
+            results[team].awayEfficiency = awayEfficiency * 100;
+            results[team].totalEfficiency = totalEfficiency * 100;
+
+            results[team].totalMatches = totalMatches;
+          }
+
+          let topTeams = Object.keys(results)
+            .filter((team) => results[team].totalMatches >= 300)
+            .sort(
+              (a, b) => results[b].totalEfficiency - results[a].totalEfficiency
+            )
+            .slice(0, 5)
+            .map((team) => ({
+              name: team,
+              totalEfficiency: results[team].totalEfficiency,
+              homeEfficiency: results[team].homeEfficiency,
+              awayEfficiency: results[team].awayEfficiency,
+            }));
+
+          console.log(topTeams);
+
+          d3.select("#homeCheckbox").on("change", () =>
+            updatePieChart(topTeams)
+          );
+          d3.select("#awayCheckbox").on("change", () =>
+            updatePieChart(topTeams)
+          );
+
+          updatePieChart(topTeams);
+
+          function updatePieChart(teams) {
+            let homeChecked = d3.select("#homeCheckbox").property("checked");
+            let awayChecked = d3.select("#awayCheckbox").property("checked");
+
+            let key = "totalEfficiency";
+            if (homeChecked && !awayChecked) {
+              key = "homeEfficiency";
+            } else if (!homeChecked && awayChecked) {
+              key = "awayEfficiency";
+            }
+
+            let pieData = teams.map((team) => ({
+              name: team.name,
+              value: team[key],
+            }));
+
+            var pie = d3.pie().value(function (d) {
+              return d.value;
+            });
+
+            var pieArcs = svg.selectAll("g.pie").data(pie(pieData));
+
+            pieArcs.exit().remove();
+
+            var newArcs = pieArcs
+              .enter()
+              .append("g")
+              .attr("class", "pie")
+              .attr(
+                "transform",
+                "translate(" + width / 2 + ", " + height / 2 + ")"
+              );
+
+            newArcs
+              .append("path")
+              .attr("fill", function (d, i) {
+                return colors[i];
+              })
+              .attr("d", arc)
+              .on("click", function (event, d) {
+                console.log("Data object on click:", d);
+                var name = d.data.name;
+                console.log("Team: " + name);
+                drawLineChart(name);
+              });
+
+            newArcs
+              .append("text")
+              .attr("transform", function (d) {
+                var pos = arc.centroid(d);
+
+                return "translate(" + pos + ")rotate(" + angle(d) + ")";
+              })
+              .attr("text-anchor", "middle")
+              .text(function (d) {
+                return d.data.name + ": " + d.data.value.toFixed(2);
+              })
+              .attr("dy", "0.35em")
+              .attr("font-size", "16px")
+              .attr("font-weight", "bold");
+
+            pieArcs
+              .select("path")
+              .attr("d", arc)
+              .attr("fill", function (d, i) {
+                return colors[i];
+              });
+
+            pieArcs
+              .select("text")
+              .attr("transform", function (d) {
+                var pos = arc.centroid(d);
+
+                return "translate(" + pos + ")rotate(" + angle(d) + ")";
+              })
+              .text(function (d) {
+                return d.data.name + ": " + d.data.value.toFixed(2);
+              });
+
+            function angle(d) {
+              var a = ((d.startAngle + d.endAngle) * 90) / Math.PI - 90;
+              return a > 120 ? a - 180 : a;
+            }
+          }
+
+          function drawLineChart(team) {
+            var lineChartContainer = d3.select("#line-chart-container");
+            lineChartContainer.selectAll("*").remove();
+
+            var margin = { top: 35, right: 20, bottom: 50, left: 50 },
+              width = 600 - margin.left - margin.right,
+              height = 300 - margin.top - margin.bottom;
+
+            var svg = lineChartContainer
+              .append("svg")
+              .attr("width", width + margin.left + margin.right)
+              .attr("height", height + margin.top + margin.bottom)
+              .append("g")
+              .attr(
+                "transform",
+                "translate(" + margin.left + "," + margin.top + ")"
+              );
+
+            var data = Object.keys(results[team].yearlyStats).map((year) => ({
+              year: +year,
+              efficiency:
+                ((results[team].yearlyStats[year].homeWins * 3 +
+                  results[team].yearlyStats[year].homeDraws +
+                  results[team].yearlyStats[year].awayWins * 3 +
+                  results[team].yearlyStats[year].awayDraws) /
+                  ((results[team].yearlyStats[year].homeWins +
+                    results[team].yearlyStats[year].homeDraws +
+                    results[team].yearlyStats[year].homeLosses +
+                    results[team].yearlyStats[year].awayWins +
+                    results[team].yearlyStats[year].awayDraws +
+                    results[team].yearlyStats[year].awayLosses) *
+                    3)) *
+                100,
+            }));
+
+            var x = d3
+              .scaleTime()
+              .domain(
+                d3.extent(data, function (d) {
+                  return new Date(d.year, 0, 1);
+                })
+              )
+              .range([0, width]);
+            var y = d3.scaleLinear().domain([0, 100]).range([height, 0]);
+
+            var line = d3
+              .line()
+              .x(function (d) {
+                return x(new Date(d.year, 0, 1));
+              })
+              .y(function (d) {
+                return y(d.efficiency);
+              });
+
+            svg
+              .append("g")
+              .attr("transform", "translate(0," + height + ")")
+              .call(d3.axisBottom(x).ticks(5).tickFormat(d3.timeFormat("%Y")));
+
+            svg.append("g").call(d3.axisLeft(y));
+
+            svg
+              .append("path")
+              .datum(data)
+              .attr("class", "line")
+              .attr("fill", "none")
+              .attr("stroke", "steelblue")
+              .attr("stroke-width", 1.5)
+              .attr("d", line);
+
+            svg
+              .append("text")
+              .attr(
+                "transform",
+                "translate(" + width / 2 + " ," + (height + margin.top) + ")"
+              )
+              .style("text-anchor", "middle")
+              .text("Years");
+
+            svg
+              .append("text")
+              .attr("transform", "rotate(-90)")
+              .attr("y", 0 - margin.left)
+              .attr("x", 0 - height / 2)
+              .attr("dy", "1em")
+              .style("text-anchor", "middle")
+              .text("Efficiency (%)");
+            svg
+              .append("text")
+              .attr("x", width / 2)
+              .attr("y", 0 - margin.top / 2)
+              .attr("text-anchor", "middle")
+              .style("font-size", "22px")
+              .text("Total Efficiency Over Time");
+          }
+        })
+        .catch((error) => console.error(error));
+    </script>
+  </body>
+</html>
